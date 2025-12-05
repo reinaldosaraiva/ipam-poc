@@ -1,0 +1,21 @@
+@startuml C4_Container
+!include <C4/C4_Container>
+
+title IPAM PoC - Container Diagram
+
+Person(networkAdmin, "Network Admin", "Manages network resources")
+
+System_Boundary(ipamPoc, "IPAM PoC") {
+    Container(frontend, "Frontend", "Next.js 14, TypeScript, TailwindCSS", "SPA for network management with allocation wizard")
+    Container(backend, "Backend API", "FastAPI, Python 3.11, Pydantic v2", "REST API with allocation rules and naming conventions")
+    Container(allocationService, "Allocation Service", "Python", "Domain logic for VLAN ranges, prefix hierarchy, naming")
+}
+
+System_Ext(netbox, "NetBox", "PostgreSQL-backed IPAM/DCIM")
+
+Rel(networkAdmin, frontend, "Uses", "HTTPS:3000")
+Rel(frontend, backend, "API calls", "HTTPS:8001/JSON")
+Rel(backend, allocationService, "Uses")
+Rel(backend, netbox, "pynetbox SDK", "HTTPS:8000")
+
+@enduml

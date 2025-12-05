@@ -1,13 +1,14 @@
 # IPAM Web Application - Product Requirements Document
 
-> **Version:** 2.0
+> **Version:** 2.1
 > **Date:** 2025-12-05
 > **Status:** Implemented
+> **Reference:** [net-automation](https://github.com/phenriiique/net-automation)
 
 ## Overview
 
 Web application for IP Address Management migrated from Terraform-based NetBox automation.
-Implements naming conventions and allocation patterns from [net-automation](https://github.com/phenriiique/net-automation).
+Implements naming conventions and allocation patterns from the net-automation project.
 
 | Component | Technology |
 |-----------|------------|
@@ -18,127 +19,243 @@ Implements naming conventions and allocation patterns from [net-automation](http
 
 ---
 
-## 1. Functional Requirements
+## 1. Architecture Diagrams
 
-### 1.1 IP Prefix Management (IPAM Core)
+### 1.1 System Context (C4)
+
+![C4 Context](diagrams/c4-context.png)
+
+### 1.2 Container Diagram (C4)
+
+![C4 Container](diagrams/c4-container.png)
+
+### 1.3 Site Allocation Flow
+
+![Sequence Allocation](diagrams/sequence-allocation.png)
+
+### 1.4 Device Sync Flow
+
+![Sequence Device Sync](diagrams/sequence-device-sync.png)
+
+---
+
+## 2. Naming Conventions (Regras de Nomenclatura)
+
+### 2.1 Tenant Naming
+
+| Pattern | Format | Example |
+|---------|--------|---------|
+| Tenant Name | `br-{region}-{number}` | `br-ne-1`, `br-se-2` |
+| Tenant Slug | Same as name | `br-ne-1` |
+
+**Region Codes:**
+
+| Region | Code | Description |
+|--------|------|-------------|
+| Nordeste | `ne` | Northeast Brazil |
+| Sudeste | `se` | Southeast Brazil |
+| Sul | `su` | South Brazil |
+| Centro-Oeste | `co` | Central-West Brazil |
+| Norte | `no` | North Brazil |
+
+### 2.2 Site Naming
+
+| Pattern | Format | Example |
+|---------|--------|---------|
+| Site Name | `Site {Region}` | `Site Nordeste` |
+| Site Slug | `site-{region}` | `site-nordeste` |
+| Facility Code | `{REGION}-DC-{NUMBER}` | `NE-DC-01` |
+
+**Slug Generation Rules:**
+- Convert to lowercase
+- Replace spaces with hyphens
+- Remove Portuguese accents (é→e, ã→a, ç→c)
+- Remove special characters
+- Collapse multiple hyphens
+
+```python
+# Example: "São Paulo" → "sao-paulo"
+# Example: "Região Nordeste" → "regiao-nordeste"
+```
+
+### 2.3 VLAN Naming
+
+| Pattern | Format | Example |
+|---------|--------|---------|
+| VLAN Name | `vlan-{purpose}` | `vlan-mgmt`, `vlan-k8s-nodes` |
+| VLAN Description | `{Purpose} network` | `Management network` |
+
+### 2.4 Device Naming
+
+| Pattern | Format | Example |
+|---------|--------|---------|
+| Database Server | `{region}-db-srv-{number}` | `ne-db-srv-01` |
+| Application Server | `{region}-app-srv-{number}` | `ne-app-srv-02` |
+| Generic Server | `{region}-srv-{number}` | `se-srv-01` |
+
+### 2.5 Rack Naming
+
+| Pattern | Format | Example |
+|---------|--------|---------|
+| Rack Name | `{site}-rack-{number}` | `ne-rack-01` |
+
+---
+
+## 3. Allocation Rules (Regras de Alocação)
+
+### 3.1 VLAN Allocation Ranges
+
+| Category | VID Range | Purpose |
+|----------|-----------|---------|
+| **Management** | 100-199 | Infrastructure, OOB, BMC, PXE |
+| **Data** | 250-299 | Applications, storage, services |
+| **User** | 300-399 | End-user networks (future) |
+| **Guest** | 400-499 | Guest/visitor networks (future) |
+
+### 3.2 Predefined VLANs
+
+#### Management VLANs (100-199)
+
+| VID | Name | Description | Use Case |
+|-----|------|-------------|----------|
+| 100 | `vlan-mgmt` | Management | SSH, SNMP, monitoring |
+| 101 | `vlan-oob` | Out-of-band | Console servers, KVM |
+| 102 | `vlan-bmc` | BMC/IPMI | Server management (iDRAC, iLO) |
+| 103 | `vlan-pxe` | PXE Boot | OS deployment, imaging |
+
+#### Data VLANs (250-299)
+
+| VID | Name | Description | Use Case |
+|-----|------|-------------|----------|
+| 250 | `vlan-k8s-nodes` | Kubernetes nodes | K8s node communication |
+| 251 | `vlan-k8s-pods` | Kubernetes pods | Pod network (CNI) |
+| 252 | `vlan-k8s-svc` | Kubernetes services | Service mesh, ingress |
+| 253 | `vlan-storage` | Storage network | iSCSI, NFS, Ceph |
+| 254 | `vlan-backup` | Backup network | Backup traffic isolation |
+| 255 | `vlan-replication` | Replication | DR, database replication |
+| 256 | `vlan-external` | External access | DMZ, public services |
+
+### 3.3 IP Prefix Allocation Hierarchy
+
+```
+Site Container (/16)
+├── VLAN Subnets (/21) - 2,048 hosts each
+│   └── Host Subnets (/26) - 62 hosts each (per rack)
+```
+
+#### Prefix Size Rules
+
+| Level | CIDR | Hosts | Purpose |
+|-------|------|-------|---------|
+| Container | /16 | 65,534 | Site-level aggregate |
+| VLAN Subnet | /21 | 2,046 | Per-VLAN allocation |
+| Host Subnet | /26 | 62 | Per-rack allocation |
+
+#### Allocation Example
+
+For base prefix `10.1.0.0/16` (Site Nordeste):
+
+```
+10.1.0.0/16 (Container - Site Nordeste)
+├── 10.1.0.0/21   (VLAN 100 - vlan-mgmt)
+│   ├── 10.1.0.0/26   (Rack 1)
+│   ├── 10.1.0.64/26  (Rack 2)
+│   ├── 10.1.0.128/26 (Rack 3)
+│   └── ...
+├── 10.1.8.0/21   (VLAN 101 - vlan-oob)
+├── 10.1.16.0/21  (VLAN 102 - vlan-bmc)
+├── 10.1.24.0/21  (VLAN 103 - vlan-pxe)
+├── 10.1.32.0/21  (VLAN 250 - vlan-k8s-nodes)
+├── 10.1.40.0/21  (VLAN 251 - vlan-k8s-pods)
+├── 10.1.48.0/21  (VLAN 252 - vlan-k8s-svc)
+├── 10.1.56.0/21  (VLAN 253 - vlan-storage)
+├── 10.1.64.0/21  (VLAN 254 - vlan-backup)
+├── 10.1.72.0/21  (VLAN 255 - vlan-replication)
+└── 10.1.80.0/21  (VLAN 256 - vlan-external)
+```
+
+### 3.4 Prefix Status Rules
+
+| Status | Use Case |
+|--------|----------|
+| `container` | Aggregate prefixes (site-level /16) |
+| `active` | In-use subnets |
+| `reserved` | Planned but not deployed |
+| `deprecated` | Being phased out |
+
+---
+
+## 4. Functional Requirements
+
+### 4.1 IP Prefix Management (IPAM Core)
 
 - **CRUD Operations**: Create, read, update, delete IP prefixes/subnets
 - **Attributes**: prefix, status, site_id, tenant_id, vlan_id, is_pool, role_id, tags
 - **Status Values**: active, reserved, deprecated, container
-- **Hierarchical Allocation**:
-  - Container prefix: /16 per site
-  - VLAN subnets: /21 per VLAN category
-  - Host subnets: /26 per rack
+- **Hierarchical Allocation**: Automatic subnet calculation based on rules
 
-### 1.2 VLAN Management
+### 4.2 VLAN Management
 
 - **CRUD Operations**: Manage VLANs with full lifecycle
 - **Attributes**: name, vid (1-4094), status, site_id, tenant_id, group_id, tags
-- **Predefined Allocation Ranges**:
-  - Management VLANs: 100-199
-  - Data VLANs: 250-299
+- **Predefined Templates**: 11 VLANs auto-created per site
 
-### 1.3 Device Inventory
+### 4.3 Device Inventory
 
 - **Sync-Only Mode**: Devices are read-only, synced from NetBox
-- **No CRUD**: Cannot create or delete devices from IPAM
-- **Attributes Displayed**: name, serial, device_type, site, role, status
+- **No CRUD from IPAM**: Cannot create or delete devices
 - **NetBox Link**: Direct link to manage device in NetBox
+- **Rationale**: NetBox is the authoritative source for device inventory
 
-### 1.4 Site Management
+### 4.4 Site Management
 
 - **CRUD Operations**: Create, read, update, delete sites
-- **Attributes**: name, slug, status, description, tenant_id
-- **Naming Convention**: Auto-generated slug from name
-- **Facility Code**: Format `{CITY}-DC-{NUMBER}` (e.g., NE-DC-01)
+- **Auto-generation**: Slug and facility code generated from name
+- **Tenant Association**: Each site belongs to a tenant
 
-### 1.5 Tenant Management
+### 4.5 Tenant Management
 
 - **CRUD Operations**: Create, read, update, delete tenants
-- **Attributes**: name, slug, description, tags
-- **Naming Convention**: Format `br-{region}-{number}` (e.g., br-ne-1)
+- **Naming Convention**: Follows `br-{region}-{number}` pattern
 
-### 1.6 Site Allocation (Automated Provisioning)
+### 4.6 Site Allocation (Automated Provisioning)
 
 Complete site provisioning in a single operation:
 
 1. **Create Tenant** with naming convention
 2. **Create Site** with facility code
-3. **Create VLANs** (predefined management + data VLANs)
-4. **Create Prefixes** (hierarchical allocation)
-
-**Predefined VLANs:**
-
-| VID | Name | Category |
-|-----|------|----------|
-| 100 | vlan-mgmt | Management |
-| 101 | vlan-oob | Management |
-| 102 | vlan-bmc | Management |
-| 103 | vlan-pxe | Management |
-| 250 | vlan-k8s-nodes | Data |
-| 251 | vlan-k8s-pods | Data |
-| 252 | vlan-k8s-svc | Data |
-| 253 | vlan-storage | Data |
-| 254 | vlan-backup | Data |
-| 255 | vlan-replication | Data |
-| 256 | vlan-external | Data |
-
-### 1.7 Naming Conventions
-
-- **Slug Generation**: Auto-generate from name with Portuguese accent support
-- **Site Names**: `Site {Region}` → slug `site-{region}`
-- **Tenant Names**: `br-{region}-{number}`
-- **VLAN Names**: `vlan-{purpose}` (e.g., vlan-mgmt, vlan-k8s-nodes)
-- **Device Names**: `{region}-{role}-srv-{number}` (e.g., ne-db-srv-01)
-
-### 1.8 Interface Configuration (Future)
-
-- **CRUD Operations**: Configure network interfaces
-- **Attributes**: name, device_id, type, mode, tagged_vlans, untagged_vlan
-
-### 1.9 Bulk Operations (Future)
-
-- Bulk creation via CSV/JSON import
-- Bulk update of multiple records
-- Bulk delete with confirmation
-
-### 1.10 Search and Filtering
-
-- Full-text search across all entities
-- Filter by site, tenant, status, tags
-- Advanced query builder
+3. **Create VLANs** (11 predefined)
+4. **Create Prefixes** (container + 11 VLAN subnets)
 
 ---
 
-## 2. Non-Functional Requirements
+## 5. Non-Functional Requirements
 
 | Requirement | Target | Status |
 |-------------|--------|--------|
 | Response Time | < 500ms for CRUD operations | Implemented |
+| Allocation Time | < 30 seconds for full site | Implemented |
 | Authentication | OAuth2 / JWT | Planned |
-| Authorization | RBAC (Role-Based Access Control) | Planned |
+| Authorization | RBAC (admin, operator, viewer) | Planned |
 | Scalability | 10,000 devices, 100,000 prefixes | Designed |
-| Availability | 99.9% uptime | Designed |
 
 ---
 
-## 3. User Stories
+## 6. User Stories
 
 | ID | Role | Story | Priority | Status |
 |----|------|-------|----------|--------|
-| US-01 | Network Admin | Manage IP prefixes and VLANs efficiently | High | Done |
-| US-02 | Network Admin | Allocate complete site infrastructure in one operation | High | Done |
-| US-03 | System Admin | View device inventory synced from NetBox | High | Done |
-| US-04 | Network Engineer | Follow naming conventions automatically | High | Done |
-| US-05 | Tenant Manager | Assign resources to tenants | Medium | Done |
-| US-06 | Operator | View dashboard with network overview | Medium | Partial |
+| US-01 | Network Admin | Manage IP prefixes following allocation rules | High | Done |
+| US-02 | Network Admin | Allocate complete site with one click | High | Done |
+| US-03 | Network Admin | VLANs auto-created with naming conventions | High | Done |
+| US-04 | System Admin | View device inventory synced from NetBox | High | Done |
+| US-05 | Network Engineer | Slugs auto-generated with Portuguese support | High | Done |
+| US-06 | Tenant Manager | Assign resources to tenants | Medium | Done |
 | US-07 | Security Officer | Secure access with RBAC | High | Planned |
-| US-08 | System Admin | Perform bulk operations on devices | Medium | Planned |
-| US-09 | Auditor | Access audit logs of changes | Low | Planned |
 
 ---
 
-## 4. API Endpoints
+## 7. API Endpoints
 
 ```
 /api/v1/
@@ -147,67 +264,48 @@ Complete site provisioning in a single operation:
 ├── devices/               # Device READ-ONLY (sync from NetBox)
 ├── sites/                 # Site CRUD
 ├── tenants/               # Tenant CRUD
-├── interfaces/            # Interface CRUD (planned)
 ├── allocation/            # Automated allocation
-│   ├── vlan-definitions/  # Predefined VLANs
-│   ├── vlan-ranges/       # VLAN range rules
-│   ├── naming/preview/    # Preview naming
-│   ├── plan/              # Plan allocation
-│   ├── execute/           # Execute allocation
-│   └── site/              # Complete site allocation
-├── bulk/                  # Bulk operations (planned)
-│   ├── import/
-│   └── export/
-└── auth/                  # Authentication (planned)
-    ├── login/
-    └── refresh/
+│   ├── vlan-definitions/  # GET predefined VLANs
+│   ├── vlan-ranges/       # GET VLAN range rules
+│   ├── naming/preview/    # POST preview naming
+│   ├── plan/              # POST plan allocation
+│   ├── execute/           # POST execute plan
+│   └── site/              # POST complete site allocation
 ```
 
 ---
 
-## 5. Success Metrics
+## 8. Example Data
 
-| Metric | Target | Current |
-|--------|--------|---------|
-| Time to provision site | < 30 seconds (vs 2-5 min with Terraform) | Achieved |
-| API response time | < 500ms | Achieved |
-| Error rate | < 1% for API operations | Achieved |
-| User adoption | 80% of network team within 1 month | Pending |
-| User satisfaction | NPS > 40 | Pending |
+### Sites Allocated
+
+| Site | Tenant | Base Prefix | VLANs | Status |
+|------|--------|-------------|-------|--------|
+| Site Nordeste | br-ne-1 | 10.1.0.0/16 | 100-103, 250-256 | Active |
+| Site Sudeste | br-se-1 | 10.2.0.0/16 | 100-103, 250-256 | Active |
+
+### Devices (Synced from NetBox)
+
+| Device | Manufacturer | Model | Site | Role |
+|--------|--------------|-------|------|------|
+| ne-db-srv-01 | Dell | PowerEdge R750 | Nordeste | Database Server |
+| ne-db-srv-02 | Lenovo | ThinkSystem SR650 | Nordeste | Database Server |
+| ne-app-srv-01 | Dell | PowerEdge R650 | Nordeste | Application Server |
+| ne-app-srv-02 | Lenovo | ThinkSystem SR630 | Nordeste | Application Server |
+| se-db-srv-01 | Dell | PowerEdge R750 | Sudeste | Database Server |
+| se-db-srv-02 | Lenovo | ThinkSystem SR650 | Sudeste | Database Server |
+| se-app-srv-01 | Dell | PowerEdge R650 | Sudeste | Application Server |
+| se-app-srv-02 | Lenovo | ThinkSystem SR630 | Sudeste | Application Server |
 
 ---
 
-## 6. Out of Scope (v1.0)
+## 9. Out of Scope (v1.0)
 
 - Cable management
 - Rack visualization
 - Circuit provisioning
 - Automated IP discovery
-- Full authentication (using NetBox token for now)
-
----
-
-## 7. Example Data (Demo)
-
-### Sites
-
-| Name | Slug | Tenant |
-|------|------|--------|
-| Site Nordeste | site-nordeste | br-ne-1 |
-| Site Sudeste | site-sudeste | br-se-1 |
-
-### Devices
-
-| Device | Type | Site | Role |
-|--------|------|------|------|
-| ne-db-srv-01 | Dell PowerEdge R750 | Nordeste | Database Server |
-| ne-db-srv-02 | Lenovo ThinkSystem SR650 | Nordeste | Database Server |
-| ne-app-srv-01 | Dell PowerEdge R650 | Nordeste | Application Server |
-| ne-app-srv-02 | Lenovo ThinkSystem SR630 | Nordeste | Application Server |
-| se-db-srv-01 | Dell PowerEdge R750 | Sudeste | Database Server |
-| se-db-srv-02 | Lenovo ThinkSystem SR650 | Sudeste | Database Server |
-| se-app-srv-01 | Dell PowerEdge R650 | Sudeste | Application Server |
-| se-app-srv-02 | Lenovo ThinkSystem SR630 | Sudeste | Application Server |
+- Full authentication (using NetBox token)
 
 ---
 

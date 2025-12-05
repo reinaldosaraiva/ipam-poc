@@ -1,0 +1,44 @@
+@startuml Sequence_DeviceSync
+!theme plain
+
+title Device Sync Flow (Read-Only)
+
+actor "Operator" as user
+participant "Frontend\n(Next.js)" as frontend
+participant "Backend\n(FastAPI)" as backend
+entity "NetBox\nAPI" as netbox
+
+user -> frontend: Click "Sync" button
+activate frontend
+
+frontend -> frontend: Show loading spinner
+
+frontend -> backend: GET /api/v1/devices/
+activate backend
+
+backend -> netbox: GET /dcim/devices/
+activate netbox
+netbox --> backend: Device list with\ntype, role, site, serial
+deactivate netbox
+
+backend -> backend: Transform to\nDeviceResponse[]
+
+backend --> frontend: DeviceResponse[]\n(read-only data)
+deactivate backend
+
+frontend -> frontend: Update table\nShow "Last sync" timestamp
+
+frontend --> user: Display device inventory\n(no edit/delete buttons)
+deactivate frontend
+
+note right of frontend
+  Device names are links
+  to NetBox device page
+end note
+
+user -> netbox: Click device name\n(opens in new tab)
+activate netbox
+netbox --> user: NetBox device detail page
+deactivate netbox
+
+@enduml

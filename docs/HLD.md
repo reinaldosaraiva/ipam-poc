@@ -1,6 +1,6 @@
 # IPAM Web Application - High-Level Design
 
-> **Version:** 2.0
+> **Version:** 2.1
 > **Date:** 2025-12-05
 > **Status:** Implemented
 
@@ -10,36 +10,13 @@
 
 The IPAM Web Application follows **Clean Architecture** with a hexagonal pattern, ensuring separation of concerns and modularity. The backend uses FastAPI with sync support for simplicity, while the frontend leverages Next.js 14 App Router for modern React patterns. All data integrates with NetBox via its REST API using pynetbox.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        FRONTEND                              │
-│                    Next.js 14 + React                        │
-│   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐           │
-│   │Prefixes │ │  VLANs  │ │ Devices │ │Allocate │           │
-│   └─────────┘ └─────────┘ └─────────┘ └─────────┘           │
-└─────────────────────────┬───────────────────────────────────┘
-                          │ REST API (JSON)
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                        BACKEND                               │
-│                  FastAPI + Pydantic v2                       │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │   Routers   │→ │   Domain    │→ │   Infrastructure    │  │
-│  │  (API v1)   │  │  (Services) │  │    (NetBox)         │  │
-│  └─────────────┘  └─────────────┘  └──────────┬──────────┘  │
-│         │                │                    │              │
-│  ┌──────┴──────┐  ┌──────┴──────┐            │              │
-│  │   Schemas   │  │ Allocation  │            │              │
-│  │  (Pydantic) │  │   Rules     │            │              │
-│  └─────────────┘  └─────────────┘            │              │
-└──────────────────────────────────────────────┼──────────────┘
-                                               │
-                                               ▼
-                                        ┌─────────────┐
-                                        │   NetBox    │
-                                        │   REST API  │
-                                        └─────────────┘
-```
+### 1.1 System Context (C4)
+
+![C4 Context](diagrams/c4-context.png)
+
+### 1.2 Container Diagram (C4)
+
+![C4 Container](diagrams/c4-container.png)
 
 ---
 

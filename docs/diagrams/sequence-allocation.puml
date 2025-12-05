@@ -1,0 +1,63 @@
+@startuml Sequence_Allocation
+!theme plain
+
+title Site Allocation Flow
+
+actor "Network Admin" as user
+participant "Frontend\n(Next.js)" as frontend
+participant "Backend\n(FastAPI)" as backend
+participant "Allocation\nService" as allocation
+entity "NetBox\nAPI" as netbox
+
+user -> frontend: Fill allocation form\n(region, base_prefix)
+activate frontend
+
+frontend -> backend: POST /api/v1/allocation/site
+activate backend
+
+backend -> allocation: generate_names(region)
+activate allocation
+allocation --> backend: tenant_name, site_name,\nfacility_code
+deactivate allocation
+
+backend -> allocation: get_vlan_definitions()
+activate allocation
+allocation --> backend: 11 predefined VLANs\n(100-103, 250-256)
+deactivate allocation
+
+backend -> allocation: calculate_prefixes(base_prefix)
+activate allocation
+allocation --> backend: container /16,\nVLAN subnets /21
+deactivate allocation
+
+backend -> netbox: POST /tenancy/tenants/
+activate netbox
+netbox --> backend: tenant_id
+deactivate netbox
+
+backend -> netbox: POST /dcim/sites/
+activate netbox
+netbox --> backend: site_id
+deactivate netbox
+
+loop for each VLAN (11x)
+    backend -> netbox: POST /ipam/vlans/
+    activate netbox
+    netbox --> backend: vlan_id
+    deactivate netbox
+end
+
+loop for each prefix (12x)
+    backend -> netbox: POST /ipam/prefixes/
+    activate netbox
+    netbox --> backend: prefix_id
+    deactivate netbox
+end
+
+backend --> frontend: AllocationResult\n{tenant, site, vlans[], prefixes[]}
+deactivate backend
+
+frontend --> user: Show success with\ncreated resources
+deactivate frontend
+
+@enduml

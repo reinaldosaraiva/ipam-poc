@@ -1,0 +1,17 @@
+@startuml C4_Context
+!include <C4/C4_Context>
+
+title IPAM PoC - System Context Diagram
+
+Person(networkAdmin, "Network Admin", "Manages IP addresses, VLANs, and sites")
+Person(operator, "Operator", "Views device inventory and network status")
+
+System(ipamPoc, "IPAM PoC", "Web application for IP Address Management with automated allocation")
+
+System_Ext(netbox, "NetBox", "Source of truth for network infrastructure data")
+
+Rel(networkAdmin, ipamPoc, "Manages prefixes, VLANs, sites", "HTTPS")
+Rel(operator, ipamPoc, "Views devices, syncs inventory", "HTTPS")
+Rel(ipamPoc, netbox, "CRUD operations via REST API", "HTTPS/JSON")
+
+@enduml
