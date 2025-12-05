@@ -1,8 +1,9 @@
 # IPAM Web Application - High-Level Design
 
-> **Version:** 2.1
+> **Version:** 2.2
 > **Date:** 2025-12-05
 > **Status:** Implemented
+> **Diagrams:** Rendered with [Kroki](https://kroki.io) (C4-PlantUML)
 
 ---
 
@@ -37,247 +38,67 @@ The IPAM Web Application follows **Clean Architecture** with a hexagonal pattern
 
 ---
 
-## 3. Backend Structure
+## 3. Component Diagram (C4)
 
-```
-backend/
-├── app/
-│   ├── __init__.py
-│   ├── main.py                 # FastAPI app entry point
-│   ├── config.py               # Settings with Pydantic
-│   │
-│   ├── api/                    # API Layer (Routers)
-│   │   ├── __init__.py
-│   │   ├── deps.py             # Dependencies (NetBox client)
-│   │   └── v1/
-│   │       ├── __init__.py
-│   │       ├── prefixes.py     # /api/v1/prefixes - CRUD
-│   │       ├── vlans.py        # /api/v1/vlans - CRUD
-│   │       ├── devices.py      # /api/v1/devices - READ-ONLY
-│   │       ├── sites.py        # /api/v1/sites - CRUD
-│   │       ├── tenants.py      # /api/v1/tenants - CRUD
-│   │       ├── interfaces.py   # /api/v1/interfaces - CRUD
-│   │       └── allocation.py   # /api/v1/allocation - Provisioning
-│   │
-│   ├── domain/                 # Business Logic Layer
-│   │   ├── __init__.py
-│   │   └── allocation/
-│   │       ├── __init__.py
-│   │       ├── naming.py       # Naming conventions
-│   │       └── rules.py        # Allocation rules (VLANs, prefixes)
-│   │
-│   ├── infrastructure/         # Data Access Layer
-│   │   ├── __init__.py
-│   │   └── netbox/
-│   │       ├── __init__.py
-│   │       └── client.py       # NetBox API client (pynetbox)
-│   │
-│   ├── schemas/                # Pydantic Schemas
-│   │   ├── __init__.py
-│   │   ├── prefix.py
-│   │   ├── vlan.py
-│   │   ├── device.py
-│   │   ├── site.py
-│   │   ├── tenant.py
-│   │   └── allocation.py
-│   │
-│   └── utils/                  # Utilities
-│       ├── __init__.py
-│       └── slug.py             # Slug generation (Portuguese support)
-│
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py
-│   └── api/
-│       └── test_prefixes.py
-│
-├── pyproject.toml
-├── Dockerfile
-└── docker-compose.yml
-```
+![C4 Component](diagrams/c4-component.png)
 
 ---
 
-## 4. Frontend Structure
+## 4. Data Flow - Site Allocation
 
-```
-frontend/
-├── app/                        # Next.js App Router
-│   ├── layout.tsx              # Root layout with sidebar
-│   ├── page.tsx                # Dashboard
-│   ├── prefixes/
-│   │   └── page.tsx            # Prefix management (CRUD)
-│   ├── vlans/
-│   │   └── page.tsx            # VLAN management (CRUD)
-│   ├── devices/
-│   │   └── page.tsx            # Device inventory (read-only sync)
-│   ├── sites/
-│   │   └── page.tsx            # Site management (CRUD)
-│   ├── tenants/
-│   │   └── page.tsx            # Tenant management (CRUD)
-│   ├── allocation/
-│   │   └── page.tsx            # Site allocation wizard
-│   ├── interfaces/
-│   │   └── page.tsx            # Interface management
-│   └── settings/
-│       └── page.tsx            # Settings
-│
-├── components/
-│   ├── sidebar.tsx             # Navigation sidebar
-│   └── ui/                     # UI components
-│
-├── lib/
-│   └── api.ts                  # API client (fetch wrapper)
-│
-├── next.config.mjs
-├── tailwind.config.ts
-├── tsconfig.json
-├── Dockerfile
-└── package.json
-```
+![Sequence Allocation](diagrams/sequence-allocation.png)
 
 ---
 
-## 5. Domain Model - Allocation
+## 5. Data Flow - Device Sync
 
-### 5.1 VLAN Allocation Rules
-
-```python
-class VlanRanges:
-    MANAGEMENT = (100, 199)  # Management VLANs
-    DATA = (250, 299)        # Data VLANs
-
-PREDEFINED_VLANS = [
-    # Management (100-199)
-    {"vid": 100, "name": "vlan-mgmt", "category": "management"},
-    {"vid": 101, "name": "vlan-oob", "category": "management"},
-    {"vid": 102, "name": "vlan-bmc", "category": "management"},
-    {"vid": 103, "name": "vlan-pxe", "category": "management"},
-    # Data (250-299)
-    {"vid": 250, "name": "vlan-k8s-nodes", "category": "data"},
-    {"vid": 251, "name": "vlan-k8s-pods", "category": "data"},
-    {"vid": 252, "name": "vlan-k8s-svc", "category": "data"},
-    {"vid": 253, "name": "vlan-storage", "category": "data"},
-    {"vid": 254, "name": "vlan-backup", "category": "data"},
-    {"vid": 255, "name": "vlan-replication", "category": "data"},
-    {"vid": 256, "name": "vlan-external", "category": "data"},
-]
-```
-
-### 5.2 Prefix Allocation Hierarchy
-
-```
-Container (/16)
-└── VLAN Subnets (/21)
-    └── Host Subnets (/26)
-
-Example for 10.0.0.0/16:
-├── 10.0.0.0/21 (VLAN 100 - mgmt)
-│   ├── 10.0.0.0/26 (Rack 1)
-│   ├── 10.0.0.64/26 (Rack 2)
-│   └── ...
-├── 10.0.8.0/21 (VLAN 101 - oob)
-├── 10.0.16.0/21 (VLAN 102 - bmc)
-└── ...
-```
-
-### 5.3 Naming Conventions
-
-```python
-class NamingConventions:
-    @staticmethod
-    def tenant_name(region: str, number: int) -> str:
-        return f"br-{region.lower()}-{number}"
-
-    @staticmethod
-    def facility_code(city: str, number: int) -> str:
-        return f"{city.upper()}-DC-{number:02d}"
-
-    @staticmethod
-    def device_name(region: str, role: str, number: int) -> str:
-        return f"{region.lower()}-{role}-srv-{number:02d}"
-```
+![Sequence Device Sync](diagrams/sequence-device-sync.png)
 
 ---
 
-## 6. Data Flow - Site Allocation
+## 6. Deployment Architecture (C4)
 
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│  User    │    │ Frontend │    │ Backend  │    │ NetBox   │
-└────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘
-     │               │               │               │
-     │ Fill form     │               │               │
-     │ (region,      │               │               │
-     │  base_prefix) │               │               │
-     ├──────────────►│               │               │
-     │               │ POST /api/v1/ │               │
-     │               │ allocation/   │               │
-     │               │ site          │               │
-     │               ├──────────────►│               │
-     │               │               │               │
-     │               │               │ 1. Create     │
-     │               │               │    Tenant     │
-     │               │               ├──────────────►│
-     │               │               │               │
-     │               │               │ 2. Create     │
-     │               │               │    Site       │
-     │               │               ├──────────────►│
-     │               │               │               │
-     │               │               │ 3. Create     │
-     │               │               │    VLANs (11) │
-     │               │               ├──────────────►│
-     │               │               │               │
-     │               │               │ 4. Create     │
-     │               │               │    Prefixes   │
-     │               │               ├──────────────►│
-     │               │               │               │
-     │               │               │◄──────────────┤
-     │               │◄──────────────┤               │
-     │◄──────────────┤ Show results  │               │
-     │               │               │               │
-```
+![C4 Deployment](diagrams/c4-deployment.png)
 
 ---
 
-## 7. Data Flow - Device Sync
+## 7. Domain Model
 
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│  User    │    │ Frontend │    │ Backend  │    │ NetBox   │
-└────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘
-     │               │               │               │
-     │ Click Sync    │               │               │
-     ├──────────────►│               │               │
-     │               │ GET /api/v1/  │               │
-     │               │   devices/    │               │
-     │               ├──────────────►│               │
-     │               │               │ GET /dcim/    │
-     │               │               │   devices/    │
-     │               │               ├──────────────►│
-     │               │               │               │
-     │               │               │◄──────────────┤
-     │               │               │  Device list  │
-     │               │◄──────────────┤               │
-     │◄──────────────┤ Display table │               │
-     │               │ (read-only)   │               │
-     │               │               │               │
-     │ Click device  │               │               │
-     │ name          │               │               │
-     ├───────────────┼───────────────┼──────────────►│
-     │               │               │  Open NetBox  │
-     │               │               │  device page  │
-```
+### 7.1 VLAN Allocation Rules
+
+| Category | VID Range | Purpose |
+|----------|-----------|---------|
+| Management | 100-199 | mgmt, oob, bmc, pxe |
+| Data | 250-299 | k8s, storage, backup |
+
+### 7.2 Prefix Allocation Hierarchy
+
+| Level | CIDR | Hosts | Purpose |
+|-------|------|-------|---------|
+| Container | /16 | 65,534 | Site aggregate |
+| VLAN Subnet | /21 | 2,046 | Per-VLAN |
+| Host Subnet | /26 | 62 | Per-rack |
+
+### 7.3 Naming Conventions
+
+| Entity | Pattern | Example |
+|--------|---------|---------|
+| Tenant | `br-{region}-{number}` | br-ne-1 |
+| Site | `Site {Region}` | Site Nordeste |
+| Facility | `{REGION}-DC-{NUMBER}` | NE-DC-01 |
+| Device | `{region}-{role}-srv-{number}` | ne-db-srv-01 |
 
 ---
 
 ## 8. Security Considerations
 
-- **Authentication**: NetBox API token (planned: JWT)
-- **Authorization**: Planned RBAC with roles (admin, operator, viewer)
-- **API Security**: CORS configuration, input validation via Pydantic
-- **Secrets**: Environment variables, never in code
-- **Device Protection**: Read-only sync prevents accidental deletion
+| Aspect | Implementation |
+|--------|----------------|
+| Authentication | NetBox API token (planned: JWT) |
+| Authorization | Planned RBAC (admin, operator, viewer) |
+| API Security | CORS, Pydantic validation |
+| Secrets | Environment variables |
+| Device Protection | Read-only sync mode |
 
 ---
 
@@ -299,27 +120,10 @@ Content-Type: application/json
 
 ```json
 {
-  "tenant": {
-    "id": 1,
-    "name": "br-ne-1",
-    "slug": "br-ne-1"
-  },
-  "site": {
-    "id": 1,
-    "name": "Site Nordeste",
-    "slug": "site-nordeste",
-    "facility": "NE-DC-01"
-  },
-  "vlans": [
-    {"vid": 100, "name": "vlan-mgmt"},
-    {"vid": 101, "name": "vlan-oob"},
-    ...
-  ],
-  "prefixes": [
-    {"prefix": "10.1.0.0/16", "status": "container"},
-    {"prefix": "10.1.0.0/21", "vlan": 100},
-    ...
-  ]
+  "tenant": {"id": 1, "name": "br-ne-1"},
+  "site": {"id": 1, "name": "Site Nordeste", "facility": "NE-DC-01"},
+  "vlans": [{"vid": 100, "name": "vlan-mgmt"}, ...],
+  "prefixes": [{"prefix": "10.1.0.0/16", "status": "container"}, ...]
 }
 ```
 
@@ -339,65 +143,30 @@ GET /api/v1/devices/
     "device_type_name": "PowerEdge R750",
     "role_name": "Database Server",
     "site_name": "Site Nordeste",
-    "status": "active",
-    "serial": "DELL-NE-DB001"
+    "status": "active"
   }
 ]
 ```
 
 ---
 
-## 10. Deployment Architecture
+## 10. Diagram Sources
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           Docker Compose                             │
-│                                                                      │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
-│  │    Frontend     │  │     Backend     │  │      NetBox         │  │
-│  │   (Next.js)     │  │   (FastAPI)     │  │   (docker-compose   │  │
-│  │   Port: 3000    │  │   Port: 8001    │  │    .netbox.yml)     │  │
-│  └────────┬────────┘  └────────┬────────┘  │   Port: 8000        │  │
-│           │                    │           └──────────┬──────────┘  │
-│           │                    │                      │              │
-│           └────────────────────┴──────────────────────┘              │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+All diagrams are generated from PlantUML source files using Kroki:
 
-Services:
-- Frontend: http://localhost:3000
-- Backend:  http://localhost:8001
-- NetBox:   http://localhost:8000
-- API Docs: http://localhost:8001/docs
-```
+| Diagram | Source | Render |
+|---------|--------|--------|
+| C4 Context | `diagrams/c4-context.puml` | `kroki.io/c4plantuml/png` |
+| C4 Container | `diagrams/c4-container.puml` | `kroki.io/c4plantuml/png` |
+| C4 Component | `diagrams/c4-component.puml` | `kroki.io/c4plantuml/png` |
+| C4 Deployment | `diagrams/c4-deployment.puml` | `kroki.io/c4plantuml/png` |
+| Site Allocation | `diagrams/sequence-allocation.puml` | `kroki.io/plantuml/png` |
+| Device Sync | `diagrams/sequence-device-sync.puml` | `kroki.io/plantuml/png` |
 
----
+**Render all diagrams:**
 
-## 11. Component Diagram
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         IPAM PoC                             │
-│                                                              │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────┐  │
-│  │  Prefixes   │    │   VLANs     │    │    Devices      │  │
-│  │  (CRUD)     │    │   (CRUD)    │    │  (Read-Only)    │  │
-│  └──────┬──────┘    └──────┬──────┘    └────────┬────────┘  │
-│         │                  │                    │            │
-│         └──────────────────┼────────────────────┘            │
-│                            │                                 │
-│  ┌─────────────┐    ┌──────┴──────┐    ┌─────────────────┐  │
-│  │   Sites     │    │ Allocation  │    │    Tenants      │  │
-│  │  (CRUD)     │    │  (Wizard)   │    │    (CRUD)       │  │
-│  └──────┬──────┘    └──────┬──────┘    └────────┬────────┘  │
-│         │                  │                    │            │
-│         └──────────────────┼────────────────────┘            │
-│                            │                                 │
-│                     ┌──────┴──────┐                          │
-│                     │   NetBox    │                          │
-│                     │   Client    │                          │
-│                     └─────────────┘                          │
-└─────────────────────────────────────────────────────────────┘
+```bash
+./docs/diagrams/render-diagrams.sh
 ```
 
 ---

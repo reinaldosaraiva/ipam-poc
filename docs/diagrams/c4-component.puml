@@ -1,0 +1,25 @@
+@startuml C4_Component
+!include <C4/C4_Component>
+
+title IPAM PoC - Component Diagram (Backend)
+
+Container_Boundary(backend, "Backend API") {
+    Component(routers, "API Routers", "FastAPI", "REST endpoints for CRUD operations")
+    Component(schemas, "Schemas", "Pydantic v2", "Request/Response validation")
+    Component(allocation_svc, "Allocation Service", "Python", "Site provisioning logic")
+    Component(naming_svc, "Naming Service", "Python", "Naming conventions and slug generation")
+    Component(rules_svc, "Rules Service", "Python", "VLAN ranges and prefix hierarchy")
+    Component(netbox_client, "NetBox Client", "pynetbox", "NetBox API integration")
+}
+
+System_Ext(netbox, "NetBox API", "IPAM/DCIM backend")
+
+Rel(routers, schemas, "Validates with")
+Rel(routers, allocation_svc, "Uses")
+Rel(allocation_svc, naming_svc, "Generates names")
+Rel(allocation_svc, rules_svc, "Gets rules")
+Rel(allocation_svc, netbox_client, "Creates resources")
+Rel(routers, netbox_client, "CRUD operations")
+Rel(netbox_client, netbox, "REST API", "HTTPS")
+
+@enduml

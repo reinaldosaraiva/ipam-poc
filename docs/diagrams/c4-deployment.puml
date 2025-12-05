@@ -1,0 +1,27 @@
+@startuml C4_Deployment
+!include <C4/C4_Deployment>
+
+title IPAM PoC - Deployment Diagram
+
+Deployment_Node(docker, "Docker Compose", "Docker 24.x") {
+    Deployment_Node(frontend_container, "Frontend Container", "Node.js 20 Alpine") {
+        Container(frontend, "Next.js App", "Next.js 14", "Port 3000")
+    }
+
+    Deployment_Node(backend_container, "Backend Container", "Python 3.11 Slim") {
+        Container(backend, "FastAPI App", "FastAPI", "Port 8001")
+    }
+}
+
+Deployment_Node(netbox_stack, "NetBox Stack", "docker-compose.netbox.yml") {
+    Container(netbox, "NetBox", "Django", "Port 8000")
+    ContainerDb(postgres, "PostgreSQL", "PostgreSQL 15", "NetBox data")
+    Container(redis, "Redis", "Redis 7", "Cache/Queue")
+}
+
+Rel(frontend, backend, "REST API", "HTTP/JSON")
+Rel(backend, netbox, "pynetbox", "HTTP/JSON")
+Rel(netbox, postgres, "SQL")
+Rel(netbox, redis, "Cache")
+
+@enduml
