@@ -1,0 +1,71 @@
+# =============================================================================
+# IPAM PoC - Docker Compose
+# Production-ready configuration
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend - FastAPI
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ipam-backend
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    environment:
+      # Force local NetBox connection (ignores system env vars)
+      NETBOX_URL: "http://host.docker.internal:8000"
+      NETBOX_TOKEN: "0123456789abcdef0123456789abcdef01234567"
+      SECRET_KEY: "dev-secret-key-change-in-production"
+      DEBUG: "true"
+      CORS_ORIGINS: '["http://localhost:3000","http://frontend:3000"]'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ipam-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`api.ipam.local`)"
+
+  # ---------------------------------------------------------------------------
+  # Frontend - Next.js
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ipam-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - BACKEND_URL=http://backend:8000
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-in-production}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - ipam-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`ipam.local`)"
+
+networks:
+  ipam-network:
+    name: ipam-network
+    driver: bridge

@@ -1,0 +1,115 @@
+# =============================================================================
+# NetBox - Docker Compose for Development
+# Based on netbox-community/netbox-docker
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # NetBox Application
+  # ---------------------------------------------------------------------------
+  netbox:
+    image: netboxcommunity/netbox:v4.1-3.0.2
+    container_name: netbox
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SUPERUSER_API_TOKEN: "0123456789abcdef0123456789abcdef01234567"
+      SUPERUSER_EMAIL: "admin@example.com"
+      SUPERUSER_NAME: "admin"
+      SUPERUSER_PASSWORD: "admin"
+      ALLOWED_HOSTS: "*"
+      CSRF_TRUSTED_ORIGINS: "http://localhost:8000 http://127.0.0.1:8000"
+      DB_HOST: netbox-postgres
+      DB_NAME: netbox
+      DB_USER: netbox
+      DB_PASSWORD: netbox
+      DB_WAIT_DEBUG: "1"
+      REDIS_HOST: netbox-redis
+      REDIS_PASSWORD: ""
+      REDIS_CACHE_HOST: netbox-redis
+      REDIS_CACHE_PASSWORD: ""
+      SECRET_KEY: "r8m9nLGnzSc8gVGDD21xu9Zy8G4Zc2PaqHE3I8cvv123456789"
+      SKIP_SUPERUSER: "false"
+    ports:
+      - "8000:8080"
+    volumes:
+      - netbox-media:/opt/netbox/netbox/media
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    networks:
+      - netbox-network
+
+  # ---------------------------------------------------------------------------
+  # NetBox Worker (Background Jobs)
+  # ---------------------------------------------------------------------------
+  netbox-worker:
+    image: netboxcommunity/netbox:v4.1-3.0.2
+    container_name: netbox-worker
+    depends_on:
+      netbox:
+        condition: service_healthy
+    command: /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py rqworker
+    environment:
+      DB_HOST: netbox-postgres
+      DB_NAME: netbox
+      DB_USER: netbox
+      DB_PASSWORD: netbox
+      REDIS_HOST: netbox-redis
+      REDIS_PASSWORD: ""
+      SECRET_KEY: "r8m9nLGnzSc8gVGDD21xu9Zy8G4Zc2PaqHE3I8cvv123456789"
+    networks:
+      - netbox-network
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: netbox-postgres
+    environment:
+      POSTGRES_DB: netbox
+      POSTGRES_USER: netbox
+      POSTGRES_PASSWORD: netbox
+    volumes:
+      - netbox-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netbox"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - netbox-network
+
+  # ---------------------------------------------------------------------------
+  # Redis (Cache & Queue)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: netbox-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - netbox-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - netbox-network
+
+volumes:
+  netbox-media:
+  netbox-postgres:
+  netbox-redis:
+
+networks:
+  netbox-network:
+    name: netbox-network
+    driver: bridge

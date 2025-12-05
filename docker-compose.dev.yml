@@ -1,0 +1,56 @@
+# =============================================================================
+# IPAM PoC - Docker Compose Development
+# Hot-reload and debugging enabled
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend - FastAPI (Development)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: ipam-backend-dev
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    environment:
+      - NETBOX_URL=${NETBOX_URL:-http://host.docker.internal:8000}
+      - NETBOX_TOKEN=${NETBOX_TOKEN}
+      - SECRET_KEY=dev-secret-key
+      - DEBUG=true
+      - CORS_ORIGINS=["http://localhost:3000"]
+    volumes:
+      - ./backend/app:/app/app:cached
+    networks:
+      - ipam-network
+
+  # ---------------------------------------------------------------------------
+  # Frontend - Next.js (Development)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: ipam-frontend-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - BACKEND_URL=http://backend:8000
+      - WATCHPACK_POLLING=true
+    volumes:
+      - ./frontend:/app:cached
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    networks:
+      - ipam-network
+
+networks:
+  ipam-network:
+    name: ipam-network
+    driver: bridge
